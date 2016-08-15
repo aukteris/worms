@@ -1,0 +1,569 @@
+<!doctype html> 
+<html lang="en"> 
+<head> 
+	<meta charset="UTF-8" />
+	<meta name = "viewport" content = "width = device-width,initial-scale = 1.0,maximum-scale = 1,user-scalable = no">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black">
+	<title>Slither</title>
+	<script type="text/javascript" src="/js/phaser.min.js"></script>
+	<script src="/socket.io/socket.io.js"></script>
+    <style type="text/css">
+        body {
+            margin: 0;
+        }
+        
+        canvas {
+	        padding-left:5px;
+        }
+        
+        #nameHover {
+	        position: absolute;
+	        text-align: center;
+	        top: 100px;
+	        left: 140px;
+	        color: white;
+        }
+        
+        #reset {
+	        position: absolute;
+	        text-align: center;
+	        top: 100px;
+	        left: 140px;
+	        color: white;
+	        display: none;
+        }
+        
+        #lead {
+	        position: absolute;
+	        text-align: center;
+	        top: 200px;
+	        left: 140px;
+	        color: white;
+	        display: none;
+        }
+    </style>
+</head>
+<body style="background-color:black">
+	
+	<div id="nameHover">Please enter your name<br><input type="text" name="playerName"><br><button name="saveName" onclick="setName()">Submit</button>
+	</div>
+	
+	<div id="reset">
+		Game over<br><button name="reset" onClick="reset()">Reset</button>
+	</div>
+	
+	<div id="lead">
+		<table id="lead_table">
+		</table>
+	</div>
+	
+	<script>
+		var playerName;
+		
+		function setName() {
+			playerName = document.getElementsByName("playerName")[0].value;
+			document.getElementById("nameHover").setAttribute("style", "display:none;");
+			stopmoving = false;
+		}
+		
+		function reset() {
+			document.getElementById("reset").setAttribute("style", "display:none;");
+			document.getElementById("lead").setAttribute("style", "display:none;");
+			stopmoving = false;
+		}
+		
+		var socket = io();
+		var me;
+		var globalpos;
+		var color;
+		
+		// Initialize starting variables
+		socket.on('init', function(msg){
+		  me = msg[0];
+		  color = msg[1];
+		});
+		
+		// Receive the update from the server and draw the opponent snakes
+		socket.on('update', function(msg){
+			
+			// Clear the previous server snake positions
+			if (typeof globalpos != "undefined") {
+				globalpos.forEach(function(element, index){
+					if (element != null && element.id != me) {
+						element.dir.forEach(function(elnt,index) {
+							if (typeof tiles[elnt] != "undefined") {
+								if (board[elnt]['x'] == 0 || board[elnt]['y'] == 0 || board[elnt]['x'] == (width - 1) || board[elnt]['y'] == (height - 1)) {
+									tiles[elnt].frame = 2;
+								} else {
+									tiles[elnt].frame = 0;	
+								}
+							}
+						});
+					}
+				});
+			}
+			
+			// Update the new positions
+			globalpos = msg;
+			
+			// Draw the new snakes
+			globalpos.forEach(function(element, index){
+				if (element != null && element.id != me) {
+					element.dir.forEach(function(elnt,index) {
+						if (typeof tiles[elnt] != "undefined") {
+							
+							// Draw the head
+							if (index == 0) {
+								if (element.color == 0) {
+									tiles[elnt].frame = 1;
+								} else if (element.color == 1) {
+									tiles[elnt].frame = 3;
+								} else if (element.color == 2) {
+									tiles[elnt].frame = 5;
+								}
+							
+							// Draw the body
+							} else {
+								if (element.color == 0) {
+									tiles[elnt].frame = 2;
+								} else if (element.color == 1) {
+									tiles[elnt].frame = 4;
+								} else if (element.color == 2) {
+									tiles[elnt].frame = 6;
+								}
+							}
+						}
+						
+					});
+					
+				}
+			});
+				
+		});
+		
+		// Respond to the drop of a new snack
+		socket.on('drop_snack', function(msg) {
+			if (typeof snackpos['x'] != "undefined") {
+			  tag = snackpos['x']+"+"+snackpos['y'];
+			  tmpidx = lookup[tag];
+			  tiles[tmpidx].frame = 0;
+			}
+			snackpos = msg;
+		});
+		
+		// Update 
+		socket.on('lead_update', function(msg) {
+			leaderboard = msg;
+			console.log(leaderboard);
+			var lead_table = document.getElementById("lead_table");
+			
+			while (lead_table.firstChild) {
+				lead_table.removeChild(lead_table.firstChild);
+			}
+			
+			var tr;
+			var td1;
+			var td1text;
+			var td2;
+			var td2text;
+			
+			if (leaderboard.length > 0) {
+				leaderboard.some(function(element, index) {
+					tr = document.createElement("TR");
+					td1 = document.createElement("TD");
+					td1text = document.createTextNode(element[0]);
+					td1.appendChild(td1text);
+					
+					td2 = document.createElement("TD");
+					td2text = document.createTextNode(element[1]);
+					td2.appendChild(td2text);
+					
+					tr.appendChild(td1);
+					tr.appendChild(td2);
+					
+					lead_table.appendChild(tr);
+					
+					if (index === 10) {
+						return true;
+					} else {
+						return false;
+					}
+				});
+			}
+		});
+		
+		socket.on('kill', function(msg) {
+			len++;
+		});
+	  
+	</script>
+	<script type="text/javascript">
+		
+		var game = new Phaser.Game(410, 600, Phaser.AUTO, '', { preload: preload, create: create, update: update });
+		
+		// Sets some initial variables. These can be adjusted safely
+		var width = 41;
+		var height = 60;
+		
+		var len = 4;
+		var speed = 150;
+		var dir = 2;
+		var points = 0;
+		
+		// Instantiate some variables we'll use later
+		var board = [];
+		var tiles = [];
+		var lookup = [];
+		var iidx = 0;
+		var pos = [];
+		var mydirs = [];
+		var snackpos = [];
+		var leaderboard = [];
+		
+		var timer;
+		var upKey;
+		var downKey;
+		var leftKey;
+		var rightKey;
+		
+		var stopmoving = true;
+		
+		var swipe;
+		var swiping = false;
+		
+		var firstPointX;
+		var firstPointY;
+		var lastPointX;
+		var lastPointY;
+		
+		var checkSwipeX;
+		var checkSwipeY;
+		
+		var canMove = false;
+		
+		// Preload assets
+		function preload() {
+			game.load.spritesheet('tile', '/assets/snaketile.png', 10, 10);
+		    
+		}
+		
+		// Create the initial gameboard
+		function create() {			
+			
+			pos['x'] = 10;
+			pos['y'] = 10;
+			
+			// Draw the board
+			for (var i = 0; i < width; i++) {
+				for (var j = 0; j < height; j++) {
+					
+					tiles[iidx] = game.add.sprite(i*10,j*10,'tile');
+					tiles[iidx].index = iidx;
+					
+					board[iidx] = [];
+					board[iidx]['x'] = i;
+					board[iidx]['y'] = j;
+					
+					var tag = i+'+'+j;
+					lookup[tag] = iidx;
+					
+					// Draw the walls
+					if (i == 0 || j == 0 || i == (width - 1) || j == (height - 1)) {
+						tiles[iidx].frame = 2;	
+					
+					// Make the empty space
+					} else {
+						tiles[iidx].frame = 0;
+					}
+					
+					iidx++;
+				}
+			}
+			
+			//  Create our Timer
+		    timer = game.time.create(false);
+		
+		    //  Set a TimerEvent to occur after 2 seconds
+		    timer.loop(speed, refresh, this);
+		    
+		    timer.start();
+		    
+		    upKey = game.input.keyboard.addKey(Phaser.Keyboard.UP);
+		    downKey = game.input.keyboard.addKey(Phaser.Keyboard.DOWN);
+		    leftKey = game.input.keyboard.addKey(Phaser.Keyboard.LEFT);
+		    rightKey = game.input.keyboard.addKey(Phaser.Keyboard.RIGHT);
+			
+			swipe = game.input.mousePointer;
+		}
+		
+		// This is the update from the game engine, which is much faster than the refresh rate for the game board
+		function update() {
+			
+			// When the losing condition is triggered
+			if (stopmoving == true && mydirs.length > 0) {
+				
+				socket.emit('end_game');
+				
+				// Clear the previous client snake positions
+				mydirs.forEach(function(element){
+					if (board[element]['x'] == 0 || board[element]['y'] == 0 || board[element]['x'] == (width - 1) || board[element]['y'] == (height - 1)) {
+						tiles[element].frame = 2;	
+					} else {
+						tiles[element].frame = 0;
+					}
+				});
+				
+				mydirs = [];
+				pos['x'] = 10;
+				pos['y'] = 10;
+				dir = 2;
+				len = 4;
+				
+				var sendpos = {
+					id: me,
+					x: pos['x'],
+					y: pos['y'],
+					len: len,
+					dir: mydirs,
+					playerName: playerName,
+					color: color
+				}
+				
+				// Let the server know our current positions to share with the others
+				socket.emit('update', sendpos);
+				
+				document.getElementById("reset").setAttribute("style", "display:block;");
+				document.getElementById("lead").setAttribute("style", "display:block;");
+			}
+			
+			// Make sure the snack is showing
+			if (typeof snackpos['x'] != 'undefined') {
+				var tag;
+				var tmpidx;
+				tag = snackpos['x']+"+"+snackpos['y'];
+				tmpidx = lookup[tag];
+				tiles[tmpidx].frame = 2;
+			}
+			
+			if (canMove == true) {
+				if (upKey.isDown && dir != 3 && leftKey.isDown !== true && downKey.isDown !== true && rightKey.isDown !== true)
+			    {
+				    canMove = false;
+			        dir=1;
+			    }
+			    else if (downKey.isDown && dir != 1 && leftKey.isDown !== true && upKey.isDown !== true && rightKey.isDown !== true)
+			    {
+				    canMove = false;
+			        dir=3;
+			    }
+			
+			    if (leftKey.isDown && dir != 2 && downKey.isDown !== true && upKey.isDown !== true && rightKey.isDown !== true)
+			    {
+				    canMove = false;
+			        dir=0;
+			    }
+			    else if (rightKey.isDown && dir != 0 && downKey.isDown !== true && upKey.isDown !== true && leftKey.isDown !== true)
+			    {
+				    canMove = false;
+			        dir=2;
+			    }
+			    
+			    // This makes the swiping work
+			    onSwipe();
+				if (swiping){
+					swiping = false;
+					if(firstPointX > lastPointX){
+					
+						checkSwipeX = firstPointX - lastPointX;
+						
+						if ( checkSwipeX >= 100 && dir != 2) {
+							canMove = false;
+							dir = 0;
+						}
+						
+					} else if(firstPointX < lastPointX){
+					
+						checkSwipeX = lastPointX - firstPointX;
+						
+						if ( checkSwipeX >= 100 && dir != 0) {
+							canMove = false;
+							dir = 2;
+						}
+					}
+					
+					if(firstPointY > lastPointY){
+					
+						checkSwipeY = firstPointY - lastPointY;
+						
+						if ( checkSwipeY >= 100 && dir != 3) {
+							canMove = false;
+							dir = 1;
+						}
+						
+					} else if(firstPointY < lastPointY){
+					
+						checkSwipeY = lastPointY - firstPointY;
+						
+						if ( checkSwipeY >= 100 && dir != 1) {
+							canMove = false;
+							dir = 3;
+						}
+					}
+				}
+			}
+			
+		}
+		
+		// For if a swipe occurs
+		function onSwipe() {
+			if (Phaser.Point.distance(game.input.activePointer.position, game.input.activePointer.positionDown) > 0 && game.input.activePointer.duration > 0 && game.input.activePointer.duration < 1000) {
+				firstPointX = game.input.activePointer.positionDown.x;
+				firstPointY = game.input.activePointer.positionDown.y;
+				
+				lastPointX = game.input.activePointer.position.x;
+				lastPointY = game.input.activePointer.position.y;
+				
+				swiping = true;
+			}
+		}
+		
+		// This is the main board refresh logic
+		function refresh() {
+			var tmpidx;
+			
+			// Only do this if we're moving
+			if (stopmoving != true) {
+				canMove = true;
+				
+				// Clear the previous client snake positions
+				mydirs.forEach(function(element,index){
+					tiles[element].frame = 0;
+				});
+			
+				// Move Left
+				if (dir == 0) {
+					pos['x']--;
+					
+				// Move Up
+				} else if (dir == 1) {
+					pos['y']--;
+					
+				// Move Right
+				} else if (dir == 2) {
+					pos['x']++;
+					
+				// Move Down
+				} else if (dir == 3) {
+					pos['y']++;
+				}
+				
+				var ttag = pos['x']+"+"+pos['y'];
+				tmpidx = lookup[ttag];
+				
+				// Add the new cell we entered to the positions list
+				mydirs.splice(0, 0, tmpidx);
+				
+				// Eat the snack
+				if (pos['x'] == snackpos['x'] && pos['y'] == snackpos['y']) {
+					snackpos = [];
+					len++;
+				}
+				
+				// Remove the oldest cell from the list, based on our length
+				mydirs.splice(len, 1);
+				
+				var sendpos = {
+					id: me,
+					x: pos['x'],
+					y: pos['y'],
+					len: len,
+					dir: mydirs,
+					playerName: playerName,
+					color: color
+				}
+				
+				// Let the server know our current positions to share with the others
+				socket.emit('update', sendpos);
+				
+				var tmpdir;
+				var tmpx;
+				var tmpy;
+				var tmplen;
+				var tag;
+				var head;
+				
+				// Draw the clients snake
+				mydirs.forEach(function(element, index){
+					if (element != null) {
+						
+						// Draw the head	
+						if (index == 0) {
+							if (color == 0) {
+								tiles[element].frame = 1;
+							} else if (color == 1) {
+								tiles[element].frame = 3;
+							} else if (color == 2) {
+								tiles[element].frame = 5;
+							}
+							
+ 							head = element;
+							
+							// Check if we've hit anyone
+							if (typeof globalpos != "undefined") {
+								globalpos.forEach(function(ell,ix) {
+									if (ell != null && ell.id != me) {
+										ell.dir.forEach(function(el,idx) {
+											if (el == element) {
+												var send = [];
+												send.push(me);
+												send.push(ell.id);
+												
+												socket.emit('kill', send);
+												
+												stopmoving = true;
+											}
+										});
+									}	
+								});
+							}
+							
+						// Draw the body
+						} else {
+							if (color == 0) {
+								tiles[element].frame = 2;
+							} else if (color == 1) {
+								tiles[element].frame = 4;
+							} else if (color == 2) {
+								tiles[element].frame = 6;
+							}
+							
+							// Check if we hit ourselves
+							if (element == head) {
+								stopmoving = true;
+							}
+						}
+					}
+				});
+				
+				
+				// Lose condition
+				if (pos['x'] == 0 || pos['y'] == 0 || pos['x'] == (width - 1) || pos['y'] == (height - 1)) {
+					stopmoving = true;
+				}
+				
+				if (typeof snackpos['x'] == 'undefined') {
+					var send = [];
+					send.push(globalpos);
+					send.push(lookup);
+					send.push(width);
+					send.push(height);
+					socket.emit('drop_snack', send);
+				}
+			}
+		}
+		
+		
+	</script>
+</body>
+</html>

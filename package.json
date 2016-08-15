@@ -1,0 +1,8 @@
+{
+  "name": "snake-server",
+  "version": "0.0.1",
+  "description": "server to enable multiplayer snake games",
+  "dependencies": {
+    "express": "~4.10.2"
+  }
+}

@@ -1,0 +1,344 @@
+<!doctype html> 
+<html lang="en"> 
+<head> 
+	<meta charset="UTF-8" />
+	<meta name = "viewport" content = "width = device-width">
+	<title>Slither</title>
+	<script type="text/javascript" src="/js/phaser.min.js"></script>
+	<script src="/socket.io/socket.io.js"></script>
+    <style type="text/css">
+        body {
+            margin: 0;
+        }
+    </style>
+</head>
+<body style="background-color:black">
+	<script>
+	  var socket = io();
+	  var me;
+	  var globalpos;
+	  
+	  socket.on('init', function(msg){
+		  me = msg;
+	  });
+	  
+	  socket.on('update', function(msg){
+		  //console.log(msg);
+		  globalpos = msg;
+	  });
+	  
+	  socket.on('drop_snack', function(msg){
+		  var tag;
+		  var tmpidx;
+		  
+		  if (typeof snackpos['x'] != "undefined") {
+			  tag = snackpos['x']+"+"+snackpos['y'];
+			  tmpidx = lookup[tag];
+			  tiles[tmpidx].frame = 0;
+		  }
+		  snackpos = msg;
+		  tag = snackpos['x']+"+"+snackpos['y'];
+		  tmpidx = lookup[tag];
+		  tiles[tmpidx].frame = 2;
+	  });
+	  
+	</script>
+	<script type="text/javascript">
+		
+		var game = new Phaser.Game(400, 400, Phaser.AUTO, '', { preload: preload, create: create, update: update });
+		var size = 40;
+		var len = 3;
+		var speed = 150;
+		
+		var board = [];
+		var tiles = [];
+		var lookup = [];
+		var iidx = 0;
+		var pos = [];
+		
+		var dir = 2;
+		var timer;
+		var upKey;
+		var downKey;
+		var leftKey;
+		var rightKey;
+		var dirmap = [];
+		var snackpos = [];
+		
+		var stopmoving = false;
+		
+		var swipe;
+		var swiping = false;
+		
+		var firstPointX;
+		var firstPointY;
+		var lastPointX;
+		var lastPointY;
+		
+		var checkSwipeX;
+		var checkSwipeY;
+		
+		function preload() {
+			game.load.spritesheet('tile', '/assets/snaketile.png', 10, 10);
+		    
+		}
+		
+		function create() {			
+			
+			pos['x'] = 10;
+			pos['y'] = 10;
+			
+			// Draw the board
+			for (var i = 0; i < size; i++) {
+				for (var j = 0; j < size; j++) {
+					
+					tiles[iidx] = game.add.sprite(i*10,j*10,'tile');
+					tiles[iidx].index = iidx;
+					
+					board[iidx] = [];
+					board[iidx]['x'] = i;
+					board[iidx]['y'] = j;
+					
+					var tag = i+'+'+j;
+					lookup[tag] = iidx;
+					
+					// Draw the walls
+					if (i == 0 || j == 0 || i == (size - 1) || j == (size - 1)) {
+						tiles[iidx].frame = 2;	
+					
+					// Make the empty space
+					} else {
+						tiles[iidx].frame = 0;
+					}
+					
+					iidx++;
+				}
+			}
+			
+			//  Create our Timer
+		    timer = game.time.create(false);
+		
+		    //  Set a TimerEvent to occur after 2 seconds
+		    timer.loop(speed, refresh, this);
+		    
+		    timer.start();
+		    
+		    upKey = game.input.keyboard.addKey(Phaser.Keyboard.UP);
+		    downKey = game.input.keyboard.addKey(Phaser.Keyboard.DOWN);
+		    leftKey = game.input.keyboard.addKey(Phaser.Keyboard.LEFT);
+		    rightKey = game.input.keyboard.addKey(Phaser.Keyboard.RIGHT);
+			
+			swipe = game.input.mousePointer;
+		}
+		
+		function update() {
+			if (upKey.isDown && dir != 3)
+		    {
+		        dir=1;
+		    }
+		    else if (downKey.isDown && dir != 1)
+		    {
+		        dir=3;
+		    }
+		
+		    if (leftKey.isDown && dir != 2)
+		    {
+		        dir=0;
+		    }
+		    else if (rightKey.isDown && dir != 0)
+		    {
+		        dir=2;
+		    }
+		    
+		    onSwipe();
+			if (swiping){
+				swiping = false;
+				if(firstPointX > lastPointX){
+				
+					checkSwipeX = firstPointX - lastPointX;
+					
+					if ( checkSwipeX >= 150 ) {
+						canMove = true;
+						dir = 0;
+					}
+					
+				} else if(firstPointX < lastPointX){
+				
+					checkSwipeX = lastPointX - firstPointX;
+					
+					if ( checkSwipeX >= 150 ) {
+						canMove = true;
+						dir = 2;
+					}
+				}
+				
+				if(firstPointY > lastPointY){
+				
+					checkSwipeY = firstPointY - lastPointY;
+					
+					if ( checkSwipeY >= 150 ) {
+						canMove = true;
+						dir = 1;
+					}
+					
+				} else if(firstPointY < lastPointY){
+				
+					checkSwipeY = lastPointY - firstPointY;
+					
+					if ( checkSwipeY >= 150 ) {
+						canMove = true;
+						dir = 3;
+					}
+				}
+			}
+			
+		}
+		
+		function onSwipe() {
+			if (Phaser.Point.distance(game.input.activePointer.position, game.input.activePointer.positionDown) > 100 && game.input.activePointer.duration > 75 && game.input.activePointer.duration < 250)
+			{
+				firstPointX = game.input.activePointer.positionDown.x;
+				firstPointY = game.input.activePointer.positionDown.y;
+				
+				lastPointX = game.input.activePointer.position.x;
+				lastPointY = game.input.activePointer.position.y;
+				
+				swiping = true;
+			}
+		}
+		
+		function refresh() {
+			var tmpidx;
+			var tmpdirmap = dirmap;
+			dirmap = [];
+			
+			tmpdirmap.forEach(function(element,index){
+				tiles[index].frame = 0;
+			});
+			
+			if (stopmoving != true) {
+				// Left
+				if (dir == 0) {
+					pos['x']--;
+					
+				// Up
+				} else if (dir == 1) {
+					pos['y']--;
+					
+				// Right
+				} else if (dir == 2) {
+					pos['x']++;
+					
+				// Down
+				} else if (dir == 3) {
+					pos['y']++;
+				}
+			}
+			
+			// Eat the snack
+			if (pos['x'] == snackpos['x'] && pos['y'] == snackpos['y']) {
+				snackpos = [];
+				len++;
+			}
+			
+			var sendpos = {
+				id: me,
+				x: pos['x'],
+				y: pos['y'],
+				len: len,
+				dir: dir
+			}
+			
+			socket.emit('update', sendpos);
+			
+			var tmpdir;
+			var tmpx;
+			var tmpy;
+			var tmplen;
+			var tag;
+			
+			if (typeof globalpos != "undefined") {
+				globalpos.forEach(function(element, index){
+					if (element != null) {
+					
+						if (element.id == me) {
+							tmpdir = dir;
+							tmpx = pos['x'];
+							tmpy = pos['y'];
+							tmplen = len;
+						} else {
+							tmpdir = element.dir;
+							tmpx = element.x;
+							tmpy = element.y;
+							tmplen = element.len
+						}
+						
+						tag = tmpx+"+"+tmpy;
+						tmpidx = lookup[tag];
+						
+						if (typeof tiles[tmpidx] != "undefined") {
+						
+							tiles[tmpidx].frame = 1;
+							dirmap[tmpidx] = tmpdir;
+						
+							for (var t = 1; t <= tmplen; t++) {
+								
+								// Left
+								if (tmpdir == 0) {
+									tmpx++;
+									
+								// Up
+								} else if (tmpdir == 1) {
+									tmpy++;
+									
+								// Right
+								} else if (tmpdir == 2) {
+									tmpx--;
+									
+								// Down
+								} else if (tmpdir == 3) {
+									tmpy--;
+								}
+								
+								var tag = tmpx+"+"+tmpy;
+								tmpidx = lookup[tag];
+								
+								if (typeof tmpdirmap[tmpidx] != 'undefined') {
+									tmpdir = tmpdirmap[tmpidx];
+								}
+								
+								dirmap[tmpidx] = tmpdir;
+								
+								if (typeof tiles[tmpidx] != "undefined") {
+									// Lose condition
+									if (tmpx == pos['x'] && tmpy == pos['y']) {
+										tiles[tmpidx].frame = 1;
+										stopmoving = true;
+									} else {
+										tiles[tmpidx].frame = 2;
+									}
+								}
+							}
+						}
+						
+					}
+				});
+			}
+			
+			// Lose condition
+			if (pos['x'] == 0 || pos['y'] == 0 || pos['x'] == (size - 1) || pos['y'] == (size - 1)) {
+				stopmoving = true;
+			}
+			
+			if (typeof snackpos['x'] == 'undefined') {
+				var send = [];
+				send.push(dirmap);
+				send.push(lookup);
+				send.push(size);
+				socket.emit('drop_snack', send);
+			}
+			
+		}
+	</script>
+</body>
+</html>
